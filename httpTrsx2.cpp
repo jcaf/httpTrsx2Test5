@@ -573,12 +573,12 @@ int8_t httpTrsx_responseMsg(TRSX *trsx, char *rxmsg, size_t rxmsgSize)
  0: Busy in HTTP transaction
  1: End one HTTP transaction, even if client could not connect to the server.
  */
-int freeRam()
-{
-	extern int __heap_start, *__brkval;
-	int v;
-	return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
-}
+//int freeRam()
+//{
+//	extern int __heap_start, *__brkval;
+//	int v;
+//	return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
+//}
 
 #ifdef SOCKET_DEBUG
 #include <utility/w5100.h>
@@ -602,9 +602,9 @@ int8_t httpTrsx_do1trsx(TRSX *trsx, int8_t typeData, void *txmsg, uint16_t txmsg
 		json_cInteger(connectRpta, &buff[strlen(buff)]);
 		httpTrsx_UARTdebug_println(trsx, buff, 0);
 
-		strcpy(buff, "\nFreeRAm: ");
-		json_cInteger(freeRam(), &buff[strlen(buff)]);
-		httpTrsx_UARTdebug_println(trsx, buff, 0);
+//		strcpy(buff, "\nFreeRAm: ");
+//		json_cInteger(freeRam(), &buff[strlen(buff)]);
+//		httpTrsx_UARTdebug_println(trsx, buff, 0);
 		//--++
 		//if (tcpClient_connect(trsx))
 		if (connectRpta == 1)

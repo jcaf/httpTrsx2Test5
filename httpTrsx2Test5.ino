@@ -1,5 +1,7 @@
 /*
- * En modo debugging....
+ * Arduino 1.6.1
+ * EthernetDHCP
+ *
  */
 #include <Arduino.h>
 #include <SPI.h>
@@ -230,6 +232,7 @@ int8_t NIC_getLinkStatus(void)
 	int8_t cod_ret = 0;
 	int8_t link_status;
 
+	static unsigned long K;
 	if (sm0 == 0)
 	{
 		link_status = NIC_linkStatus();
@@ -238,11 +241,21 @@ int8_t NIC_getLinkStatus(void)
 			link_prev = link_status;
 			millis_last = millis();
 			sm0++;
+
+			if (link_status == 0)
+			{
+				K = 30;
+			}
+			else
+			{
+				K = 1000;
+			}
 		}
 	}
 	else if (sm0 == 1)
 	{
-		if (millis() - millis_last > 50)
+		//if (millis() - millis_last > 1000)
+		if (millis() - millis_last >= K)
 		{
 			if (link_prev == NIC_linkStatus())
 			{
@@ -251,17 +264,15 @@ int8_t NIC_getLinkStatus(void)
 			sm0 = 0x00;
 		}
 	}
-	//return NIC_link;
-	return 1;
-
+	return NIC_link;
 }
 
 // Just a utility function to nicely format an IP address.
-const char* ip_to_str(const uint8_t* ipAddr)
+const char* ip_to_str(const uint8_t *ipAddr)
 {
-  static char buf[16];
-  sprintf(buf, "%d.%d.%d.%d\0", ipAddr[0], ipAddr[1], ipAddr[2], ipAddr[3]);
-  return buf;
+	static char buf[16];
+	sprintf(buf, "%d.%d.%d.%d\0", ipAddr[0], ipAddr[1], ipAddr[2], ipAddr[3]);
+	return buf;
 }
 //return
 //0: IP no configured
@@ -303,15 +314,15 @@ int8_t eth_DHCP_leased(void)
 				//const byte* dnsAddr = EthernetDHCP.dnsIpAddress();
 
 				UART_printStrk(FS("My IP address is: "));
-				UART_printlnStr((char *)ip_to_str(ipAddr));
-
+				UART_printlnStr((char*) ip_to_str(ipAddr));
 
 				UART_printStrk(FS("\n"));
 				break;
 			}
 		}
+		prevState = state;
 	}
-	else if ( (state != DhcpStateLeased) && (millis() - prevTime) > 300)
+	else if ((state != DhcpStateLeased) && (millis() - prevTime) > 300)
 	{
 		prevTime = millis();
 		UART_printStrk(FS("."));
@@ -351,7 +362,7 @@ void setup(void)
 	delay(2000);
 
 	//Extra
-	client.setClientTimeout(500);	//200ms its OK to J.P server
+	//client.setClientTimeout(500);	//200ms its OK to J.P server
 	//W5100.setRetransmissionTime(500);	//x 0.1ms = 50 ms
 	//W5100.setRetransmissionCount(2);
 	//
@@ -504,44 +515,46 @@ void enableFlagS(void)
 PTRFX_retUINT16_T_arg1_PCHAR ethSend_pfx[NUMMAX] =
 { stack_voltage, stack_current, stack_temperature, allstacks_uvFlag, allstacks_ovFlag, };
 
-int8_t httpTrsx_scheduler(char *jsonCstr);
 
-struct _ethApp
+
+//
+static struct _ethTrsxTx
 {
-		struct _ethAppTx
-		{
-				uint8_t idx;
-				uint8_t bit;
-				int8_t sm0;
-		} tx;
-		struct _ethAppRx
-		{
-				int8_t sm0;
-		} rx;
-
-} ethApp;
-
-const struct _ethApp ethApp_Zeroes =
-{ 0 };
-void ethTrsx_job_reset(void)
+	uint8_t idx;
+	uint8_t bit;
+	int8_t sm0;
+} ethTrsxTx;
+const struct _ethTrsxTx ethTrsxTx_Zeroes ={ 0 };
+//
+static inline void ethTrsxTx_job_reset(void)
 {
-	ethApp = ethApp_Zeroes;
+	ethTrsxTx = ethTrsxTx_Zeroes;
 }
-int8_t ethTrsx_job(void)	//especific User
+/*
+ * job = 1 =  Finish all outcomming message (all flags was verifed)
+ * trsx = 1 = End 1 Transaction
+ */
+struct ETHTRSX_JOB_CODRET{
+	int8_t job;
+	int8_t trsx;
+};
+
+//struct _ethTrsx_job_codret
+struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 {
-	int8_t cod_ret = 0;
+	struct ETHTRSX_JOB_CODRET cod_ret = {0,0};
 
 	char buff[20];
 	int8_t i, n;
 	static uint8_t *pf = (uint8_t*) &ethSend;
 
 	//Tx
-#define JSONCSTR_MAXSIZE (400)
+	#define JSONCSTR_MAXSIZE (400)
 	char jsonCstr[JSONCSTR_MAXSIZE];
 	char *pjsonCstr;
 
 	uint16_t nbytes;
-	int8_t found1;
+	int8_t doTx;
 	int8_t found0;
 	//
 
@@ -549,17 +562,17 @@ int8_t ethTrsx_job(void)	//especific User
 	//Rx
 	char stream[40];
 	JSON json;
-	int8_t httpTrsx_job_codret, cod;
+	int8_t httpTrsx_rpta, jsonDecode_rpta;
 	int8_t ii;
 	static int8_t iilast;
 
 	//--++
 	//
 	jsonCstr[0] = '\0';
-	if (ethApp.tx.sm0 == 0)
+	if (ethTrsxTx.sm0 == 0)
 	{
 		//load-balance
-		if (ethApp.tx.idx < 3)
+		if (ethTrsxTx.idx < 3)
 			n = 1;
 		else
 			n = 2;
@@ -568,86 +581,94 @@ int8_t ethTrsx_job(void)	//especific User
 		pjsonCstr = &jsonCstr[0];
 		nbytes = 0;
 		found0 = 1;
-		found1 = 0;
+		doTx = 0;
 
 		UART_printStrk(FS("EMPEZANDO:"));
+
+		strcpy(pjsonCstr, "{");
+		pjsonCstr++;
+
 		for (i = 0; i < n; i++)
 		{
-			if (*pf & (1 << ethApp.tx.bit++))
+			if (*pf & (1 << ethTrsxTx.bit))
 			{
 				//++--
 				strcpy(buff, "\nidx: ");
-				json_cInteger(ethApp.tx.idx, &buff[strlen(buff)]);
+				json_cInteger(ethTrsxTx.idx, &buff[strlen(buff)]);
 				UART_printlnStr(buff);
 				//--++
 				//1) clear flag
-				//BitTo0(*pf, bit);
+				BitTo0(*pf, ethTrsxTx.bit);
+				ethTrsxTx.bit++;
 
-				if (found0 == 1)					//solo 1 vez
-				{
-					strcpy(pjsonCstr, "{");
-					pjsonCstr++;
-					found0 = 0;
-
-					UART_printlnStrk(FS("{"));
-				}
+//				if (found0 == 1)					//solo 1 vez
+//				{
+//					strcpy(pjsonCstr, "{");
+//					pjsonCstr++;
+//					found0 = 0;
+//
+//					UART_printlnStrk(FS("{"));
+//				}
 				//2) for the next if found at begin, then stay found = 1
-				if (found1 == 1)
+				if (doTx == 1)
 				{
 					strcat(pjsonCstr, ",");
 					pjsonCstr++;
 
-					UART_printlnStrk(FS(","));
+					//UART_printlnStrk(FS(","));
 				}
-				UART_printlnStrk(FS("Antes de convertir"));
+				//UART_printlnStrk(FS("Antes de convertir"));
 				//
-				nbytes = ethSend_pfx[ethApp.tx.idx](pjsonCstr);
+				nbytes = ethSend_pfx[ethTrsxTx.idx](pjsonCstr);
 				pjsonCstr += nbytes;
-				UART_printlnStrk(FS("Despues de convertir"));
+				//UART_printlnStrk(FS("Despues de convertir"));
 				//
-				found1 = 1;
+				doTx = 1;
 			}
 
-			if (++ethApp.tx.idx >= NUMMAX)              //termino de analizar todos los flags
+			if (++ethTrsxTx.idx >= NUMMAX)              //termino de analizar todos los flags
 			{
-				ethApp.tx.idx = 0x00;
+				//
+				ethTrsxTx.idx = 0x00;
 				pf = (uint8_t*) &ethSend;
-				ethApp.tx.bit = 0;
+				ethTrsxTx.bit = 0;
+				//
+				cod_ret.job = 1;
 				break;
 			}
 			else
 			{
-				if (ethApp.tx.idx % 8 == 0)
+				if (ethTrsxTx.idx % 8 == 0)
 				{
 					pf++;
-					ethApp.tx.bit = 0;
+					ethTrsxTx.bit = 0;
 				}
 			}
 		}
 		//
-		if (found1 == 1)
+		if (doTx == 1)
 		{
 			strcat(pjsonCstr, "}");
+			ethTrsxTx.sm0++;
 
-			UART_printlnStrk(FS("}"));
+			//UART_printlnStrk(FS("}"));
+			//UART_printlnStr(jsonCstr);
 		}
-
-		UART_printlnStr(jsonCstr);
-		ethApp.tx.sm0++;
 	}
 
-	if (ethApp.tx.sm0 == 1)
+	if (ethTrsxTx.sm0 == 1)
 	{
 		UART_printlnStr(jsonCstr);
 
 		//despues del primer envio, ya no interesa la direccion del buffer
-		httpTrsx_job_codret = httpTrsx_job(&trsx[0], 0, jsonCstr, strlen(jsonCstr), stream, sizeof(stream));
-		if (httpTrsx_job_codret > 0)
+
+		httpTrsx_rpta = httpTrsx_job(&trsx[0], 0, jsonCstr, strlen(jsonCstr), stream, sizeof(stream));
+		if (httpTrsx_rpta > 0)
 		{
 			do
 			{
 				json.name = (char*) NULL;
-				cod = jsonDecode(stream, sizeof(stream), &json);
+				jsonDecode_rpta = jsonDecode(stream, sizeof(stream), &json);
 				if (json.name != NULL)
 				{
 					UART_printStrk(FS("\n"));
@@ -672,16 +693,16 @@ int8_t ethTrsx_job(void)	//especific User
 						}
 					}
 				}
-			} while (cod == 0);
+			} while (jsonDecode_rpta == 0);
 
 		}
-		if ((httpTrsx_job_codret == 1) || (httpTrsx_job_codret == -1))
+		if ((httpTrsx_rpta == 1) || (httpTrsx_rpta == -1))
 		{
-			ethApp.tx.sm0 = 0x00;
+			ethTrsxTx.sm0 = 0x00;
 			UART_printlnStrk(FS("FIN"));
 			httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);
 			//delay(500);
-			cod_ret = 1;
+			cod_ret.trsx = 1;
 		}
 	}
 
@@ -689,47 +710,87 @@ int8_t ethTrsx_job(void)	//especific User
 }
 
 ////////////////////////////////////////////////////////////
+
 void eth_job(void)
 {
 	//eth_SPI_access();
-	static int8_t sm0;
+	static int8_t sm0, sm1;
+	struct ETHTRSX_JOB_CODRET cod_ret={0,0};
+
 	if (sm0 == 0)
 	{
-		if ((NIC_getLinkStatus() == 1))
+		if (NIC_getLinkStatus() == 1)
 		{
 			EthernetDHCP.begin(MAC, 1);
-			ethTrsx_job_reset();
+			ethTrsxTx_job_reset();
 
-			for (int i=0; i<TRSX_NUMMAX ; i++)
-				{httpTrsx_job_reset(&trsx[i]);}
-
-			httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);
+			for (int i = 0; i < TRSX_NUMMAX; i++)
+			{
+				httpTrsx_job_reset(&trsx[i]);
+			}
 			sm0++;
 		}
 	}
-	else if (sm0 == 1)
+	else
 	{
-		UART_printStrk(FS("sm0 --1"));
-
-		if ((NIC_getLinkStatus() == 1) && (eth_DHCP_leased() == 1))
+		if (NIC_getLinkStatus() == 0)
 		{
-			sm0++;
-
-
+			client.flush();
+			client.stop();
+			sm0 = 0x00;
 		}
-//		else
-//		{
-//			client.flush();
-//			client.stop();
-//			sm0 = 0x00;
-//		}
-	}
-	else if (sm0 == 2)
-	{
-		enableFlagS();
-		ethTrsx_job();
+
+		if (sm0 == 1)
+		{
+			if (eth_DHCP_leased() == 1)
+			{
+				//prepare Tx
+				enableFlagS();
+				httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);
+
+				//prepare Rx
+				httpTrsx_setExecMode(&trsx[1], EM_RUN_ONCE);
+				//
+				sm1 = 0x00;
+				sm0++;
+			}
+		}
+		else if (sm0 == 2)
+		{
+			if (eth_DHCP_leased() == 1)
+			{
+				if (sm1 == 0)
+				{
+					cod_ret = ethTrsxTx_job();//tx
+					if (cod_ret.job == 1)//Write job finished?
+					{
+						//reload flags
+						enableFlagS();
+					}
+					if (cod_ret.trsx == 1)//1 trsx finished?
+					{
+						//sm1++;//conmutar a Rx
+					}
+				}
+//				else if (sm1 == 1)
+//				{
+//					cod_ret = ethTrsxRx_job();//tx
+//					if (cod_ret.job == 1)//Read job finished?
+//					{
+//					}
+//					if (cod_ret.trsx == 1)//1 trsx finished?
+//					{
+//						sm1 = 0x00;//conmutar a Tx
+//					}
+//
+//				}
+
+
+			}
+		}
 	}
 }
+
 uint8_t l;
 void loop(void)
 {
@@ -744,4 +805,14 @@ void loop(void)
 	//enableFlagS();
 	//ethTrsx_job();
 	eth_job();
+
+
+//	if (NIC_getLinkStatus() == 0)
+//	{
+//		UART_printlnStr("DOWN");
+//	}
+//	else
+//	{
+//		UART_printlnStr("UP");
+//	}
 }
