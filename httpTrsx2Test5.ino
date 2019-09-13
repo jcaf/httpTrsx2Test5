@@ -4,7 +4,26 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <Ethernet.h>
+#include <EthernetDHCP.h>
 #include "httpTrsx2.h"
+
+#define DDRxLINKSTATUS	    DDRH
+#define PORTWxLINKSTATUS	PORTH
+#define PORTRxLINKSTATUS	PINH
+#define PINxLINKSTATUS	6
+
+void spi_deselect_devices(void)              //only for QUANTICO BOARD
+{
+#define WIZNET_CS 10
+#define SDCARD_CS 4
+#define LTC6804_CS 5
+	pinMode(WIZNET_CS, OUTPUT);
+	pinMode(SDCARD_CS, OUTPUT);
+	pinMode(LTC6804_CS, OUTPUT);
+	digitalWrite(WIZNET_CS, HIGH);
+	digitalWrite(SDCARD_CS, HIGH);
+	digitalWrite(LTC6804_CS, HIGH);
+}
 
 void USART_Init(unsigned int ubrr);
 void USART_Transmit(unsigned char data);
@@ -178,6 +197,137 @@ TRSX trsx[TRSX_NUMMAX];
 void spi_deselect_devices(void);	//only for QUANTICO BOARD
 EthernetClient client;	//1 instance
 //
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//void eth_SPI_access(void)
+//{
+//    SPI.endTransaction();
+//    SPI_deselectAllperipherals();
+//    SPI.beginTransaction(SPI_ETHERNET_SETTINGS);
+//    //SPI.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE0));
+//    //SPI.begin();
+//}
+//
+
+/*//0=link ok, 1=link bad*/
+// struct _NIC
+// {
+//     int8_t link;
+//}
+//NIC.link = NIC_linkStatus();
+inline int8_t NIC_linkStatus(void)
+{
+	return !ReadPin(PORTRxLINKSTATUS, PINxLINKSTATUS);
+}
+int8_t NIC_getLinkStatus(void)
+{
+	static int8_t sm0;
+	static int8_t link_prev;
+	static unsigned long millis_last;
+	static int8_t NIC_link = -1;
+//
+	int8_t cod_ret = 0;
+	int8_t link_status;
+
+	if (sm0 == 0)
+	{
+		link_status = NIC_linkStatus();
+		if (NIC_link != link_status)
+		{
+			link_prev = link_status;
+			millis_last = millis();
+			sm0++;
+		}
+	}
+	else if (sm0 == 1)
+	{
+		if (millis() - millis_last > 50)
+		{
+			if (link_prev == NIC_linkStatus())
+			{
+				NIC_link = link_prev;
+			}
+			sm0 = 0x00;
+		}
+	}
+	//return NIC_link;
+	return 1;
+
+}
+
+// Just a utility function to nicely format an IP address.
+const char* ip_to_str(const uint8_t* ipAddr)
+{
+  static char buf[16];
+  sprintf(buf, "%d.%d.%d.%d\0", ipAddr[0], ipAddr[1], ipAddr[2], ipAddr[3]);
+  return buf;
+}
+//return
+//0: IP no configured
+//1: IP is configured via DHCP
+int8_t eth_DHCP_leased(void)
+{
+//	static DhcpState DHCP_state = DhcpStateNone;
+//	DhcpState state = EthernetDHCP.poll();
+//	if (state == DhcpStateLeased)
+//		return 1;
+//	else
+//		return 0;
+	static DhcpState prevState = DhcpStateNone;
+
+	DhcpState state = EthernetDHCP.poll();
+	//
+	static unsigned long prevTime = 0;
+	if (prevState != state)
+	{
+		UART_printStrk(FS("\n"));
+
+		switch (state)
+		{
+			case DhcpStateDiscovering:
+				UART_printStrk(FS("Discovering servers."));
+				break;
+			case DhcpStateRequesting:
+				UART_printStrk(FS("Requesting lease."));
+				break;
+			case DhcpStateRenewing:
+				UART_printStrk(FS("Renewing lease."));
+				break;
+			case DhcpStateLeased:
+			{
+				UART_printStrk(FS("Obtained lease!"));
+
+				const byte *ipAddr = EthernetDHCP.ipAddress();
+				//const byte* gatewayAddr = EthernetDHCP.gatewayIpAddress();
+				//const byte* dnsAddr = EthernetDHCP.dnsIpAddress();
+
+				UART_printStrk(FS("My IP address is: "));
+				UART_printlnStr((char *)ip_to_str(ipAddr));
+
+
+				UART_printStrk(FS("\n"));
+				break;
+			}
+		}
+	}
+	else if ( (state != DhcpStateLeased) && (millis() - prevTime) > 300)
+	{
+		prevTime = millis();
+		UART_printStrk(FS("."));
+	}
+	//
+	//
+	if (state == DhcpStateLeased)
+		return 1;
+	else
+		return 0;
+
+}
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 void setup(void)
 {
 	digitalWrite(LED3, LOW);
@@ -188,50 +338,59 @@ void setup(void)
 	UART_setup();
 
 #ifdef HTTPTRSX_DEBUG
-    httpTrsx_UARTdebug_setPrintFx(UART_print);
-    httpTrsx_UARTdebug_setPrintlnFx(UART_println);
-    httpTrsx_UARTdebug_setPrintCharFx(UART_printChar);
-    #endif    
+	httpTrsx_UARTdebug_setPrintFx (UART_print);
+	httpTrsx_UARTdebug_setPrintlnFx (UART_println);
+	httpTrsx_UARTdebug_setPrintCharFx(UART_printChar);
+#endif    
 
 	//1) local network setting
-	NIC_begin(MAC, IP);	//by default DHCP
-	NIC_getMyIP(buff, sizeof(buff));
-	UART_printStrk(FS("My IP: "));
-	UART_printlnStr(buff);
+	//NIC_begin(MAC, IP);	//by default DHCP
+	//NIC_getMyIP(buff, sizeof(buff));
+	//UART_printStrk(FS("My IP: "));
+	//UART_printlnStr(buff);
 	delay(2000);
 
-	//2) Set trsx[0] 
+	//Extra
+	client.setClientTimeout(500);	//200ms its OK to J.P server
+	//W5100.setRetransmissionTime(500);	//x 0.1ms = 50 ms
+	//W5100.setRetransmissionCount(2);
+	//
+	ConfigInputPin(DDRxLINKSTATUS, PINxLINKSTATUS);
+	PinTo1(PORTWxLINKSTATUS, PINxLINKSTATUS);
+	//
+
+	//2) Set trsx[0]
 	httpTrsx_setClient(&trsx[0], (Client*) &client);	//Only for Arduinochar strval[30];//client.setTimeout(1000);
 	httpTrsx_setupServerByIP(&trsx[0], IPaddr_server, 80);
 	httpTrsx_setURI(&trsx[0], "/jsondecode1.php");
-	httpTrsx_setHost(&trsx[0], "192.168.1.54");
+	httpTrsx_setHost(&trsx[0], "192.168.1.48");
 
 	//Puede ser con una Fx o a traves de HeaderLine libre... eso por definir...
 	//httpTrsx_setApiKey(&trsx[0], "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
 	httpTrsx_setHdrLine(&trsx[0],
 			"api_key_write: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
 	//
-	httpTrsx_setExecInterval_ms(&trsx[0], 0);    //ms
-	httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);    //RUN_ONCE EM_RUN_INTERVAL
+	httpTrsx_setExecInterval_ms(&trsx[0], 0);		//ms
+	httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);		//RUN_ONCE EM_RUN_INTERVAL
 #ifdef HTTPTRSX_DEBUG
-	httpTrsx_UARTdebug_enabled(&trsx[0], TRUE);//
-	#endif
+	httpTrsx_UARTdebug_enabled(&trsx[0], TRUE);    //
+#endif
 
-	//2) Set trsx[1] 
-	httpTrsx_setClient(&trsx[1], (Client*) &client); //Only for Arduinochar strval[30];//client.setTimeout(1000);
+	//2) Set trsx[1]
+	httpTrsx_setClient(&trsx[1], (Client*) &client);    //Only for Arduinochar strval[30];//client.setTimeout(1000);
 	httpTrsx_setupServerByIP(&trsx[1], IPaddr_server, 80);
 	httpTrsx_setURI(&trsx[1], "/jsondecode1.php");
-	httpTrsx_setHost(&trsx[1], "192.168.1.54");
+	httpTrsx_setHost(&trsx[1], "192.168.1.48");
 	//
 	//httpTrsx_setApiKey(&trsx[1], "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
 	httpTrsx_setHdrLine(&trsx[1],
 			"api_key_read: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
 	//
-	httpTrsx_setExecInterval_ms(&trsx[1], 500);	//ms
-	httpTrsx_setExecMode(&trsx[1], EM_RUN_INTERVAL);	//RUN_ONCE EM_RUN_INTERVAL
+	httpTrsx_setExecInterval_ms(&trsx[1], 500);		//ms
+	httpTrsx_setExecMode(&trsx[1], EM_RUN_INTERVAL);		//RUN_ONCE EM_RUN_INTERVAL
 #ifdef HTTPTRSX_DEBUG
-	httpTrsx_UARTdebug_enabled(&trsx[1], TRUE);//TRUE
-	#endif
+	httpTrsx_UARTdebug_enabled(&trsx[1], TRUE);	//TRUE
+#endif
 
 }
 ////////////////////////////////////////////////////////////
@@ -380,6 +539,7 @@ int8_t ethTrsx_job(void)	//especific User
 #define JSONCSTR_MAXSIZE (400)
 	char jsonCstr[JSONCSTR_MAXSIZE];
 	char *pjsonCstr;
+
 	uint16_t nbytes;
 	int8_t found1;
 	int8_t found0;
@@ -419,11 +579,11 @@ int8_t ethTrsx_job(void)	//especific User
 				strcpy(buff, "\nidx: ");
 				json_cInteger(ethApp.tx.idx, &buff[strlen(buff)]);
 				UART_printlnStr(buff);
-				//--++				
+				//--++
 				//1) clear flag
 				//BitTo0(*pf, bit);
 
-				if (found0 == 1)              //solo 1 vez
+				if (found0 == 1)					//solo 1 vez
 				{
 					strcpy(pjsonCstr, "{");
 					pjsonCstr++;
@@ -486,7 +646,7 @@ int8_t ethTrsx_job(void)	//especific User
 		{
 			do
 			{
-				json.name = (void*) NULL;
+				json.name = (char*) NULL;
 				cod = jsonDecode(stream, sizeof(stream), &json);
 				if (json.name != NULL)
 				{
@@ -529,10 +689,50 @@ int8_t ethTrsx_job(void)	//especific User
 }
 
 ////////////////////////////////////////////////////////////
+void eth_job(void)
+{
+	//eth_SPI_access();
+	static int8_t sm0;
+	if (sm0 == 0)
+	{
+		if ((NIC_getLinkStatus() == 1))
+		{
+			EthernetDHCP.begin(MAC, 1);
+			ethTrsx_job_reset();
+
+			for (int i=0; i<TRSX_NUMMAX ; i++)
+				{httpTrsx_job_reset(&trsx[i]);}
+
+			httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);
+			sm0++;
+		}
+	}
+	else if (sm0 == 1)
+	{
+		UART_printStrk(FS("sm0 --1"));
+
+		if ((NIC_getLinkStatus() == 1) && (eth_DHCP_leased() == 1))
+		{
+			sm0++;
+
+
+		}
+//		else
+//		{
+//			client.flush();
+//			client.stop();
+//			sm0 = 0x00;
+//		}
+	}
+	else if (sm0 == 2)
+	{
+		enableFlagS();
+		ethTrsx_job();
+	}
+}
 uint8_t l;
 void loop(void)
 {
-
 	char buff[15];
 	strcpy(buff, "\n<<");
 	itoa(l, &buff[3], 10);
@@ -541,19 +741,7 @@ void loop(void)
 	l++;
 	//
 
-	enableFlagS();
-	ethTrsx_job();
-}
-
-void spi_deselect_devices(void)              //only for QUANTICO BOARD
-{
-#define WIZNET_CS 10
-#define SDCARD_CS 4
-#define LTC6804_CS 5
-	pinMode(WIZNET_CS, OUTPUT);
-	pinMode(SDCARD_CS, OUTPUT);
-	pinMode(LTC6804_CS, OUTPUT);
-	digitalWrite(WIZNET_CS, HIGH);
-	digitalWrite(SDCARD_CS, HIGH);
-	digitalWrite(LTC6804_CS, HIGH);
+	//enableFlagS();
+	//ethTrsx_job();
+	eth_job();
 }

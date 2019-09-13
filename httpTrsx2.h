@@ -153,6 +153,7 @@
 	void httpTrsx_setExecMode(TRSX *trsx, HTTP_TRSX_SET_EXEC_MODE execMode);
 
 	int8_t httpTrsx_job(TRSX *trsx, int8_t typeData, void *txmsg, uint16_t txmsgSize, char *rxmsg, uint16_t rxmsgSize);
+	void httpTrsx_job_reset(TRSX *trsx);
 
 	#ifdef HTTPTRSX_DEBUG
 		typedef struct _HTTPTRSXDEBUG
@@ -171,7 +172,7 @@
 		//extern HTTPTRSXDEBUG httpTrsxDebug;
 
 		void httpTrsx_UARTdebug_enabled(TRSX *trsx, BOOLEAN_T _bool);
-		void httpTrsx_UARTdebug_print(TRSX *trsx, char *str, int8_t mode);
+		//void httpTrsx_UARTdebug_print(TRSX *trsx, const char *str, int8_t mode);
 
 		#if defined(__AVR__) && defined(__GNUC__)
 			void httpTrsx_UARTdebug_setPrintFx(PTRFX_retVOID_arg1_PCHAR_arg2_INT8_T UART_print);

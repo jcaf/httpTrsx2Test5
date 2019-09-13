@@ -48,18 +48,18 @@ void httpTrsx_UARTdebug_enabled(TRSX *trsx, BOOLEAN_T _bool)
 	trsx->dbg.bf.enabled = _bool.k;
 	//httpTrsxDebug.dbg.UART_print = UART_print;
 }
-void httpTrsx_UARTdebug_print(TRSX *trsx, char *str, int8_t mode)
+void httpTrsx_UARTdebug_print(TRSX *trsx, const char *str, int8_t mode)
 {
 	if (trsx->dbg.bf.enabled)
 	{
-		httpTrsxDebug.UART_print(str, mode);
+		httpTrsxDebug.UART_print((char *)str, mode);
 	}
 }
-void httpTrsx_UARTdebug_println(TRSX *trsx, char *str, int8_t mode)
+void httpTrsx_UARTdebug_println(TRSX *trsx, const char *str, int8_t mode)
 {
 	if (trsx->dbg.bf.enabled)
 	{
-		httpTrsxDebug.UART_println(str, mode);
+		httpTrsxDebug.UART_println((char *)str, mode);
 	}
 }
 
@@ -79,7 +79,7 @@ static int8_t http_print(TRSX *trsx, const char *s)
 	int8_t cod_ret = 1;
 #if defined(__AVR__) && defined(__GNUC__)
         //trsx->client->print(s);
-		trsx->client->write(s,strlen(s));
+		trsx->client->write((const uint8_t *)s,strlen(s));
 
         #ifdef HTTPTRSX_DEBUG
             httpTrsx_UARTdebug_print(trsx, s, 0);
@@ -757,7 +757,7 @@ int8_t httpTrsx_job(TRSX *trsx, int8_t typeData, void *txmsg, uint16_t txmsgNumM
 	return cod_ret;
 }
 /* */
-void httpTrsx_init(TRSX *trsx)
+void httpTrsx_job_reset(TRSX *trsx)
 {
     httpTrsx_setExecMode(trsx, EM_WAIT_NEW_EXEC_MODE);
     trsx->exec.status = IDLE;
