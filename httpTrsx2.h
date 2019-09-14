@@ -17,7 +17,7 @@
 	#include "system.h"
 	#include "types.h"
 
-	#define HTTPTRSX_DEBUG
+	//#define HTTPTRSX_DEBUG
 	//#define SOCKET_DEBUG
 
 	#ifdef __cplusplus

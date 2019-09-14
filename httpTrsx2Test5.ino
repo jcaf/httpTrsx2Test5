@@ -373,7 +373,7 @@ void setup(void)
 	//2) Set trsx[0]
 	httpTrsx_setClient(&trsx[0], (Client*) &client);	//Only for Arduinochar strval[30];//client.setTimeout(1000);
 	httpTrsx_setupServerByIP(&trsx[0], IPaddr_server, 80);
-	httpTrsx_setURI(&trsx[0], "/jsondecode1.php");
+	httpTrsx_setURI(&trsx[0], "/jsondecodeTx.php");
 	httpTrsx_setHost(&trsx[0], "192.168.1.48");
 
 	//Puede ser con una Fx o a traves de HeaderLine libre... eso por definir...
@@ -381,7 +381,7 @@ void setup(void)
 	httpTrsx_setHdrLine(&trsx[0],
 			"api_key_write: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
 	//
-	httpTrsx_setExecInterval_ms(&trsx[0], 0);		//ms
+	//httpTrsx_setExecInterval_ms(&trsx[0], 0);		//ms
 	httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);		//RUN_ONCE EM_RUN_INTERVAL
 #ifdef HTTPTRSX_DEBUG
 	httpTrsx_UARTdebug_enabled(&trsx[0], TRUE);    //
@@ -390,15 +390,15 @@ void setup(void)
 	//2) Set trsx[1]
 	httpTrsx_setClient(&trsx[1], (Client*) &client);    //Only for Arduinochar strval[30];//client.setTimeout(1000);
 	httpTrsx_setupServerByIP(&trsx[1], IPaddr_server, 80);
-	httpTrsx_setURI(&trsx[1], "/jsondecode1.php");
+	httpTrsx_setURI(&trsx[1], "/jsondecodeRx.php");
 	httpTrsx_setHost(&trsx[1], "192.168.1.48");
 	//
 	//httpTrsx_setApiKey(&trsx[1], "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
 	httpTrsx_setHdrLine(&trsx[1],
 			"api_key_read: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
 	//
-	httpTrsx_setExecInterval_ms(&trsx[1], 500);		//ms
-	httpTrsx_setExecMode(&trsx[1], EM_RUN_INTERVAL);		//RUN_ONCE EM_RUN_INTERVAL
+	//httpTrsx_setExecInterval_ms(&trsx[1], 500);		//ms
+	httpTrsx_setExecMode(&trsx[1], EM_RUN_ONCE);		//RUN_ONCE EM_RUN_INTERVAL
 #ifdef HTTPTRSX_DEBUG
 	httpTrsx_UARTdebug_enabled(&trsx[1], TRUE);	//TRUE
 #endif
@@ -509,13 +509,10 @@ void enableFlagS(void)
 	ethSend.allstacks_uvFlag = 1;
 	ethSend.allstacks_ovFlag = 1;
 }
-
 #define NUMMAX 5
 
 PTRFX_retUINT16_T_arg1_PCHAR ethSend_pfx[NUMMAX] =
 { stack_voltage, stack_current, stack_temperature, allstacks_uvFlag, allstacks_ovFlag, };
-
-
 
 //
 static struct _ethTrsxTx
@@ -534,12 +531,11 @@ static inline void ethTrsxTx_job_reset(void)
  * job = 1 =  Finish all outcomming message (all flags was verifed)
  * trsx = 1 = End 1 Transaction
  */
-struct ETHTRSX_JOB_CODRET{
+struct ETHTRSX_JOB_CODRET
+{
 	int8_t job;
 	int8_t trsx;
 };
-
-//struct _ethTrsx_job_codret
 struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 {
 	struct ETHTRSX_JOB_CODRET cod_ret = {0,0};
@@ -552,21 +548,10 @@ struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 	#define JSONCSTR_MAXSIZE (400)
 	char jsonCstr[JSONCSTR_MAXSIZE];
 	char *pjsonCstr;
-
 	uint16_t nbytes;
 	int8_t doTx;
 	int8_t found0;
-	//
-
-	//++--
-	//Rx
-	char stream[40];
-	JSON json;
-	int8_t httpTrsx_rpta, jsonDecode_rpta;
-	int8_t ii;
-	static int8_t iilast;
-
-	//--++
+	int8_t httpTrsx_rpta;
 	//
 	jsonCstr[0] = '\0';
 	if (ethTrsxTx.sm0 == 0)
@@ -583,50 +568,29 @@ struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 		found0 = 1;
 		doTx = 0;
 
-		UART_printStrk(FS("EMPEZANDO:"));
-
+		//
 		strcpy(pjsonCstr, "{");
 		pjsonCstr++;
-
 		for (i = 0; i < n; i++)
 		{
 			if (*pf & (1 << ethTrsxTx.bit))
 			{
-				//++--
-				strcpy(buff, "\nidx: ");
-				json_cInteger(ethTrsxTx.idx, &buff[strlen(buff)]);
-				UART_printlnStr(buff);
-				//--++
 				//1) clear flag
 				BitTo0(*pf, ethTrsxTx.bit);
 				ethTrsxTx.bit++;
 
-//				if (found0 == 1)					//solo 1 vez
-//				{
-//					strcpy(pjsonCstr, "{");
-//					pjsonCstr++;
-//					found0 = 0;
-//
-//					UART_printlnStrk(FS("{"));
-//				}
 				//2) for the next if found at begin, then stay found = 1
 				if (doTx == 1)
 				{
 					strcat(pjsonCstr, ",");
 					pjsonCstr++;
-
-					//UART_printlnStrk(FS(","));
 				}
-				//UART_printlnStrk(FS("Antes de convertir"));
-				//
 				nbytes = ethSend_pfx[ethTrsxTx.idx](pjsonCstr);
 				pjsonCstr += nbytes;
-				//UART_printlnStrk(FS("Despues de convertir"));
 				//
 				doTx = 1;
 			}
-
-			if (++ethTrsxTx.idx >= NUMMAX)              //termino de analizar todos los flags
+			if (++ethTrsxTx.idx >= NUMMAX)//all flags?
 			{
 				//
 				ethTrsxTx.idx = 0x00;
@@ -645,24 +609,61 @@ struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 				}
 			}
 		}
-		//
+
 		if (doTx == 1)
 		{
 			strcat(pjsonCstr, "}");
 			ethTrsxTx.sm0++;
-
-			//UART_printlnStrk(FS("}"));
-			//UART_printlnStr(jsonCstr);
 		}
 	}
 
 	if (ethTrsxTx.sm0 == 1)
 	{
-		UART_printlnStr(jsonCstr);
-
 		//despues del primer envio, ya no interesa la direccion del buffer
+		httpTrsx_rpta = httpTrsx_job(&trsx[0], 0, jsonCstr, strlen(jsonCstr), (char*)NULL, 0);
+		if ((httpTrsx_rpta == 1) || (httpTrsx_rpta == -1))
+		{
+			ethTrsxTx.sm0 = 0x00;
 
-		httpTrsx_rpta = httpTrsx_job(&trsx[0], 0, jsonCstr, strlen(jsonCstr), stream, sizeof(stream));
+			httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);
+			//delay(500);
+			cod_ret.trsx = 1;
+
+			UART_printlnStrk(FS("FIN TX"));
+		}
+	}
+
+	return cod_ret;
+}
+///////////////////////////////////////////////
+static struct _ethTrsxRx
+{
+	//uint8_t idx;
+	//uint8_t bit;
+	int8_t sm0;
+} ethTrsxRx;
+const struct _ethTrsxRx ethTrsxRx_Zeroes ={ 0 };
+//
+static inline void ethTrsxRx_job_reset(void)
+{
+	ethTrsxRx = ethTrsxRx_Zeroes;
+}
+
+struct ETHTRSX_JOB_CODRET ethTrsxRx_job(void)
+{
+	struct ETHTRSX_JOB_CODRET cod_ret = {0,0};
+	//++--
+	//Rx
+	char stream[40];
+	JSON json;
+	int8_t httpTrsx_rpta;
+	int8_t jsonDecode_rpta;
+	int8_t ledStatus;
+	static int8_t ledStatus_last;
+
+	//if (ethTrsxRx.sm0 == 0)
+	//{
+		httpTrsx_rpta = httpTrsx_job(&trsx[1], 0, (char*)NULL, 0, stream, sizeof(stream));
 		if (httpTrsx_rpta > 0)
 		{
 			do
@@ -681,12 +682,11 @@ struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 					else if (strcmp(json.name, "num") == 0)
 					{
 						double doub = strtod(json.strval, NULL);
-						ii = (int8_t) doub;
-						if (iilast != ii)
+						ledStatus = (int8_t) doub;
+						if (ledStatus_last!= ledStatus)
 						{
-							iilast = ii;
-
-							if (ii > 0)              //False
+							ledStatus_last = ledStatus;
+							if (ledStatus > 0)
 								digitalWrite(LED3, HIGH);
 							else
 								digitalWrite(LED3, LOW);
@@ -698,13 +698,15 @@ struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 		}
 		if ((httpTrsx_rpta == 1) || (httpTrsx_rpta == -1))
 		{
-			ethTrsxTx.sm0 = 0x00;
-			UART_printlnStrk(FS("FIN"));
-			httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);
-			//delay(500);
+			//ethTrsxRx.sm0 = 0x00;
+
+			httpTrsx_setExecMode(&trsx[1], EM_RUN_ONCE);
 			cod_ret.trsx = 1;
+			cod_ret.job = 1;
+
+			UART_printlnStrk(FS("FIN RX"));
 		}
-	}
+	//}
 
 	return cod_ret;
 }
@@ -721,9 +723,11 @@ void eth_job(void)
 	{
 		if (NIC_getLinkStatus() == 1)
 		{
+			UART_printlnStr("EthernetDHCP.begin(MAC, 1)");
+
 			EthernetDHCP.begin(MAC, 1);
 			ethTrsxTx_job_reset();
-
+			ethTrsxRx_job_reset();
 			for (int i = 0; i < TRSX_NUMMAX; i++)
 			{
 				httpTrsx_job_reset(&trsx[i]);
@@ -747,7 +751,6 @@ void eth_job(void)
 				//prepare Tx
 				enableFlagS();
 				httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);
-
 				//prepare Rx
 				httpTrsx_setExecMode(&trsx[1], EM_RUN_ONCE);
 				//
@@ -769,21 +772,22 @@ void eth_job(void)
 					}
 					if (cod_ret.trsx == 1)//1 trsx finished?
 					{
-						//sm1++;//conmutar a Rx
+						sm1++;//conmutar a Rx
 					}
 				}
-//				else if (sm1 == 1)
-//				{
-//					cod_ret = ethTrsxRx_job();//tx
-//					if (cod_ret.job == 1)//Read job finished?
-//					{
-//					}
-//					if (cod_ret.trsx == 1)//1 trsx finished?
-//					{
-//						sm1 = 0x00;//conmutar a Tx
-//					}
-//
-//				}
+				else if (sm1 == 1)
+				{
+					cod_ret = ethTrsxRx_job();//tx
+					if (cod_ret.job == 1)//Read job finished?
+					{
+						sm1 = 0x00;
+					}
+					if (cod_ret.trsx == 1)//1 trsx finished?
+					{
+						//sm1 = 0x00;//conmutar a Tx
+					}
+
+				}
 
 
 			}
@@ -801,18 +805,5 @@ void loop(void)
 	UART_printlnStr(buff);
 	l++;
 	//
-
-	//enableFlagS();
-	//ethTrsx_job();
 	eth_job();
-
-
-//	if (NIC_getLinkStatus() == 0)
-//	{
-//		UART_printlnStr("DOWN");
-//	}
-//	else
-//	{
-//		UART_printlnStr("UP");
-//	}
 }

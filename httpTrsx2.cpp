@@ -282,8 +282,6 @@ static int8_t httpTrsx_requestMsg(TRSX *trsx, uint16_t contentLength)
 	int8_t cod_ret = 0;
 	char buff[20];
 
-	httpTrsx_UARTdebug_println(trsx, "httpTrsx_requestMsg - BEGIN", 0);
-
 	/*1) Request Line*/
 	http_printk(trsx, FS("POST "));
 	http_print(trsx, trsx->URI);
@@ -317,7 +315,6 @@ static int8_t httpTrsx_requestMsg(TRSX *trsx, uint16_t contentLength)
 
 	cod_ret = 1;
 
-	httpTrsx_UARTdebug_println(trsx, "httpTrsx_requestMsg - END", 0);
 	return cod_ret;
 }
 static int8_t httpTrsx_requestMsg_asJSON(TRSX *trsx, JSON *json, uint16_t npairs)	//send the request message to HTTP server
@@ -486,7 +483,7 @@ int8_t httpTrsx_responseMsg(TRSX *trsx, char *rxmsg, size_t rxmsgSize)
 					sk = 0;
 			}
 		}
-		httpTrsx_UARTdebug_println(trsx, "<buffer>>>>", 0);
+
 		//--+
 
 	}
@@ -594,13 +591,19 @@ int8_t httpTrsx_do1trsx(TRSX *trsx, int8_t typeData, void *txmsg, uint16_t txmsg
 
 	if (trsx->do1trsx.sm0 == 0) // client opens a connection
 	{
+		#ifdef HTTPTRSX_DEBUG
 		httpTrsx_UARTdebug_print(trsx, FS("\ntcpClient_connect(trsx)"), 1);
+		#endif
+
 		int connectRpta = tcpClient_connect(trsx);
+
 		//++--
-		char buff[20];
-		strcpy(buff, "\nConnectRpta: ");
-		json_cInteger(connectRpta, &buff[strlen(buff)]);
-		httpTrsx_UARTdebug_println(trsx, buff, 0);
+		#ifdef HTTPTRSX_DEBUG
+			char buff[20];
+			strcpy(buff, "\nConnectRpta: ");
+			json_cInteger(connectRpta, &buff[strlen(buff)]);
+			httpTrsx_UARTdebug_println(trsx, buff, 0);
+		#endif
 
 //		strcpy(buff, "\nFreeRAm: ");
 //		json_cInteger(freeRam(), &buff[strlen(buff)]);
@@ -613,21 +616,22 @@ int8_t httpTrsx_do1trsx(TRSX *trsx, int8_t typeData, void *txmsg, uint16_t txmsg
 		}
 		else
 		{
-			httpTrsx_UARTdebug_print(trsx, FS("\nNO CONECTO:ShowSocketStatus()"), 1);
+			#ifdef HTTPTRSX_DEBUG
+				httpTrsx_UARTdebug_print(trsx, FS("\nNO CONECTO:ShowSocketStatus()"), 1);
 
-			#ifdef SOCKET_DEBUG
-            ShowSocketStatus();
-            #endif
+				#ifdef SOCKET_DEBUG
+				ShowSocketStatus();
+				#endif
+			#endif
 
 			cod_ret = -1;
 		}
 	}
 	if (trsx->do1trsx.sm0 == 1) //client->server: send request message
 	{
-		httpTrsx_UARTdebug_print(trsx, FS("\sm0==1, antes de llamar a ..asCstr:"), 1);
+
 		if (typeData == 1)
 		{
-			httpTrsx_UARTdebug_print(trsx, FS("TYPEDATA == 1, NUNCA DEBE ENTRAR AQUI"), 1);
 			if (httpTrsx_requestMsg_asJSON(trsx, (JSON*) txmsg, txmsgNumMax))
 			{
 				trsx->do1trsx.sm0++;
@@ -637,8 +641,10 @@ int8_t httpTrsx_do1trsx(TRSX *trsx, int8_t typeData, void *txmsg, uint16_t txmsg
 		{
 			if (httpTrsx_requestMsg_asCstr(trsx, (char*) txmsg, txmsgNumMax))
 			{
-				httpTrsx_UARTdebug_print(trsx, FS("\nCSTR:"), 1);
-				httpTrsx_UARTdebug_println(trsx, (char*) txmsg, 0);
+				#ifdef HTTPTRSX_DEBUG
+					httpTrsx_UARTdebug_print(trsx, FS("\nCSTR:"), 1);
+					httpTrsx_UARTdebug_println(trsx, (char*) txmsg, 0);
+				#endif
 
 				trsx->do1trsx.sm0++;
 			}
