@@ -1,7 +1,7 @@
 /*
  * Arduino 1.6.1
  * EthernetDHCP
- *
+ * ]<äf.
  */
 #include <Arduino.h>
 #include <SPI.h>
@@ -9,16 +9,65 @@
 #include <EthernetDHCP.h>
 #include "httpTrsx2.h"
 
+//Arduino MEGA pinout
+#define LED1 34 //PC3
+#define LED2 35 //PC2
+#define LED3 36 //PC1
+#define LED4 37 //PC0
+#define LED5 38 //PD7
+#define LED6 39 //PG2
+#define RELE1 29
+#define RELE2 30
+#define RELE3 31
+#define RELE4 32
+#define RELE5 33
 #define DDRxLINKSTATUS	    DDRH
 #define PORTWxLINKSTATUS	PORTH
 #define PORTRxLINKSTATUS	PINH
 #define PINxLINKSTATUS	6
 
-void spi_deselect_devices(void)              //only for QUANTICO BOARD
+/*Simulation Quantico Board*/
+#define NUM_IC 2//8
+#define LTC_NUM_CELLS 6//12
+
+float vcellF[NUM_IC][LTC_NUM_CELLS];
+uint8_t ltc_connected[NUM_IC];
+uint8_t stack_union[NUM_IC];
+uint8_t select_2_12V[NUM_IC];
+float stack_temperatureF[NUM_IC] = { 25.6, 28.15 };
+float stack_voltage_ifcF[NUM_IC] = { 48.56, 12.78 };
+float stack_currentF[NUM_IC] = { 256.59, 869.35 };
+uint8_t uv_flag[NUM_IC][LTC_NUM_CELLS] ={
+								{ 1, 0, 1, 0, 1, 0 },
+								{ 0, 1, 0, 1, 0, 1 } };
+uint8_t ov_flag[NUM_IC][LTC_NUM_CELLS] = {
+								{ 1, 0, 1, 0, 1, 0 },
+								{ 0, 1, 0, 1, 0, 1 } };
+uint8_t openwire_flag[NUM_IC][LTC_NUM_CELLS];
+uint8_t stack_overCurrent[NUM_IC];
+uint8_t stack_overTemperature[NUM_IC];
+float internal_digital_powerF[NUM_IC];
+float internal_analog_powerF[NUM_IC];
+float internal_die_tempF[NUM_IC];
+float internal_socF[NUM_IC];
+float FACTCORR_2V = +0.0042;
+float FACTCORR_12V_C1 = +0.115;
+float FACTCORR_12V_C2 = +0.111;
+float FACTCORR_12V_C3 = +0.063;
+float FACTCORR_12V_C4 = +0.077;
+float ov_2v = 3.500;
+float uv_2v = 1.800;
+float ov_12v_S3C = 13.500;
+float uv_12v_S3C = 10.0;
+float shuntVoltFullScale = 0.05;
+float shuntRatedCurrent = 1000;
+float ov_12v = 5.5;
+float uv_12v = 2.5;
+void spi_deselect_devices(void)//only for QUANTICO BOARD
 {
-#define WIZNET_CS 10
-#define SDCARD_CS 4
-#define LTC6804_CS 5
+	#define WIZNET_CS 10
+	#define SDCARD_CS 4
+	#define LTC6804_CS 5
 	pinMode(WIZNET_CS, OUTPUT);
 	pinMode(SDCARD_CS, OUTPUT);
 	pinMode(LTC6804_CS, OUTPUT);
@@ -81,7 +130,6 @@ unsigned char USART_Receive(void)
 //    uint8_t _udr_rx = UDR0;
 //    //uint8_t u = UDR;
 //}
-//////////////////////////////////////////////
 
 void usart_print_string(const char *p)
 {
@@ -121,23 +169,11 @@ void usart_println_string(const char *p)
         usart_print_PSTRstring(p);
         USART_Transmit('\n');
     }
-
 #endif
 
-//#include <ArduinoJson.h>
-//Arduino MEGA pinout
-#define LED1 34 //PC3
-#define LED2 35 //PC2
-#define LED3 36 //PC1
-#define LED4 37 //PC0
-#define LED5 38 //PD7
-#define LED6 39 //PG2
-
 /*NIC setup*/
-uint8_t IP[4] =
-{ 192, 168, 1, 60 };	//fallback
-uint8_t MAC[6] =
-{ 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+uint8_t IP[4] = { 192, 168, 1, 60 };	//fallback
+uint8_t MAC[6] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 
 /*Connect to server - setting*/
 //char server[] = "api.quanticoservices.net";
@@ -193,31 +229,7 @@ void UART_printStr(char *str)
 }
 #endif
 
-#define TRSX_NUMMAX 2
-TRSX trsx[TRSX_NUMMAX];
-//
-void spi_deselect_devices(void);	//only for QUANTICO BOARD
-EthernetClient client;	//1 instance
-//
-//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//void eth_SPI_access(void)
-//{
-//    SPI.endTransaction();
-//    SPI_deselectAllperipherals();
-//    SPI.beginTransaction(SPI_ETHERNET_SETTINGS);
-//    //SPI.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE0));
-//    //SPI.begin();
-//}
-//
 
-/*//0=link ok, 1=link bad*/
-// struct _NIC
-// {
-//     int8_t link;
-//}
-//NIC.link = NIC_linkStatus();
 inline int8_t NIC_linkStatus(void)
 {
 	return !ReadPin(PORTRxLINKSTATUS, PINxLINKSTATUS);
@@ -254,7 +266,6 @@ int8_t NIC_getLinkStatus(void)
 	}
 	else if (sm0 == 1)
 	{
-		//if (millis() - millis_last > 1000)
 		if (millis() - millis_last >= K)
 		{
 			if (link_prev == NIC_linkStatus())
@@ -310,8 +321,6 @@ int8_t eth_DHCP_leased(void)
 				UART_printStrk(FS("Obtained lease!"));
 
 				const byte *ipAddr = EthernetDHCP.ipAddress();
-				//const byte* gatewayAddr = EthernetDHCP.gatewayIpAddress();
-				//const byte* dnsAddr = EthernetDHCP.dnsIpAddress();
 
 				UART_printStrk(FS("My IP address is: "));
 				UART_printlnStr((char*) ip_to_str(ipAddr));
@@ -327,138 +336,84 @@ int8_t eth_DHCP_leased(void)
 		prevTime = millis();
 		UART_printStrk(FS("."));
 	}
-	//
-	//
+
 	if (state == DhcpStateLeased)
 		return 1;
 	else
 		return 0;
-
 }
-//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+#define TRSX_NUMMAX 2
+TRSX trsx[TRSX_NUMMAX];
+EthernetClient client;	//1 instance
 
 void setup(void)
 {
+	digitalWrite(LED1, LOW);
+	pinMode(LED1, OUTPUT);
+	digitalWrite(LED2, LOW);
+	pinMode(LED2, OUTPUT);
 	digitalWrite(LED3, LOW);
 	pinMode(LED3, OUTPUT);
+	digitalWrite(LED4, LOW);
+	pinMode(LED4, OUTPUT);
+	digitalWrite(LED5, LOW);
+	pinMode(LED5, OUTPUT);
+	digitalWrite(LED6, LOW);
+	pinMode(LED6, OUTPUT);
 
-	char buff[30];
+	digitalWrite(RELE1, LOW);
+	pinMode(RELE1, OUTPUT);
+	digitalWrite(RELE2, LOW);
+	pinMode(RELE2, OUTPUT);
+	digitalWrite(RELE3, LOW);
+	pinMode(RELE3, OUTPUT);
+	digitalWrite(RELE4, LOW);
+	pinMode(RELE4, OUTPUT);
+	digitalWrite(RELE5, LOW);
+	pinMode(RELE5, OUTPUT);
+
+	ConfigInputPin(DDRxLINKSTATUS, PINxLINKSTATUS);
+	PinTo1(PORTWxLINKSTATUS, PINxLINKSTATUS);
+
 	spi_deselect_devices();	//only for QUANTICO BOARD
 	UART_setup();
 
-#ifdef HTTPTRSX_DEBUG
+	#ifdef HTTPTRSX_DEBUG
 	httpTrsx_UARTdebug_setPrintFx (UART_print);
 	httpTrsx_UARTdebug_setPrintlnFx (UART_println);
 	httpTrsx_UARTdebug_setPrintCharFx(UART_printChar);
-#endif    
+	#endif
 
-	//1) local network setting
-	//NIC_begin(MAC, IP);	//by default DHCP
-	//NIC_getMyIP(buff, sizeof(buff));
-	//UART_printStrk(FS("My IP: "));
-	//UART_printlnStr(buff);
 	delay(2000);
 
 	//Extra
 	//client.setClientTimeout(500);	//200ms its OK to J.P server
 	//W5100.setRetransmissionTime(500);	//x 0.1ms = 50 ms
 	//W5100.setRetransmissionCount(2);
-	//
-	ConfigInputPin(DDRxLINKSTATUS, PINxLINKSTATUS);
-	PinTo1(PORTWxLINKSTATUS, PINxLINKSTATUS);
-	//
 
-	//2) Set trsx[0]
-	httpTrsx_setClient(&trsx[0], (Client*) &client);	//Only for Arduinochar strval[30];//client.setTimeout(1000);
+	/* Set trsx[0] for Tx */
+	httpTrsx_setClient(&trsx[0], (Client*) &client);
 	httpTrsx_setupServerByIP(&trsx[0], IPaddr_server, 80);
 	httpTrsx_setURI(&trsx[0], "/jsondecodeTx.php");
 	httpTrsx_setHost(&trsx[0], "192.168.1.48");
+	httpTrsx_setHdrLine(&trsx[0], "api_key_write: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
+	httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);
+	#ifdef HTTPTRSX_DEBUG
+	httpTrsx_UARTdebug_enabled(&trsx[0], TRUE);
+	#endif
 
-	//Puede ser con una Fx o a traves de HeaderLine libre... eso por definir...
-	//httpTrsx_setApiKey(&trsx[0], "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
-	httpTrsx_setHdrLine(&trsx[0],
-			"api_key_write: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
-	//
-	//httpTrsx_setExecInterval_ms(&trsx[0], 0);		//ms
-	httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);		//RUN_ONCE EM_RUN_INTERVAL
-#ifdef HTTPTRSX_DEBUG
-	httpTrsx_UARTdebug_enabled(&trsx[0], TRUE);    //
-#endif
-
-	//2) Set trsx[1]
-	httpTrsx_setClient(&trsx[1], (Client*) &client);    //Only for Arduinochar strval[30];//client.setTimeout(1000);
+	/* Set trsx[1] for Rx */
+	httpTrsx_setClient(&trsx[1], (Client*) &client);
 	httpTrsx_setupServerByIP(&trsx[1], IPaddr_server, 80);
 	httpTrsx_setURI(&trsx[1], "/jsondecodeRx.php");
 	httpTrsx_setHost(&trsx[1], "192.168.1.48");
-	//
-	//httpTrsx_setApiKey(&trsx[1], "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
-	httpTrsx_setHdrLine(&trsx[1],
-			"api_key_read: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
-	//
-	//httpTrsx_setExecInterval_ms(&trsx[1], 500);		//ms
-	httpTrsx_setExecMode(&trsx[1], EM_RUN_ONCE);		//RUN_ONCE EM_RUN_INTERVAL
-#ifdef HTTPTRSX_DEBUG
-	httpTrsx_UARTdebug_enabled(&trsx[1], TRUE);	//TRUE
-#endif
-
+	httpTrsx_setHdrLine(&trsx[1],"api_key_read: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjE1MzU0MjczNTVfcGFibG8iLCJkZXZpY2VfaWQiOiI1YjdmMjc3ZmVmNGFkNjgxYjIwM2I0NDQiLCJlbWFpbCI6InBhYmxvZG9uYXlyZUBnbWFpbC5jb20iLCJpYXQiOjE1NjQwODgwMjR9.G8BWFQ1O_KH4hVfibYSlGd-UqQLdWZ1d_sxonbhqANc");
+	httpTrsx_setExecMode(&trsx[1], EM_RUN_ONCE);
+	#ifdef HTTPTRSX_DEBUG
+	httpTrsx_UARTdebug_enabled(&trsx[1], TRUE);
+	#endif
 }
-////////////////////////////////////////////////////////////
-#define NUM_IC 2
-#define LTC_NUM_CELLS 6
-
-float vcellF[NUM_IC][LTC_NUM_CELLS];
-
-uint8_t ltc_connected[NUM_IC];
-uint8_t stack_union[NUM_IC];
-uint8_t select_2_12V[NUM_IC];
-
-float stack_temperatureF[NUM_IC] =
-{ 25.6, 28.15 };
-float stack_voltage_ifcF[NUM_IC] =
-{ 48.56, 12.78 };
-float stack_currentF[NUM_IC] =
-{ 256.59, 869.35 };
-
-uint8_t uv_flag[NUM_IC][LTC_NUM_CELLS] =
-{
-{ 1, 0, 1, 0, 1, 0 },
-{ 0, 1, 0, 1, 0, 1 } };
-uint8_t ov_flag[NUM_IC][LTC_NUM_CELLS] =
-{
-{ 1, 0, 1, 0, 1, 0 },
-{ 0, 1, 0, 1, 0, 1 } };
-uint8_t openwire_flag[NUM_IC][LTC_NUM_CELLS];
-uint8_t stack_overCurrent[NUM_IC];
-uint8_t stack_overTemperature[NUM_IC];
-
-float internal_digital_powerF[NUM_IC];	//digital power supply, nominal:[2.7V-3.6V]
-float internal_analog_powerF[NUM_IC];	//analog power supply, nominal: [4.5V-5.5V]
-float internal_die_tempF[NUM_IC];
-float internal_socF[NUM_IC];	//SOC
-
-//FACTOR CORRECTION based FLUKE 175
-float FACTCORR_2V = +0.0042;	// + 0.0202 LTC genera una caida de tension
-float FACTCORR_12V_C1 = +0.115;	//+0.073;
-float FACTCORR_12V_C2 = +0.111;	//+0.064;
-float FACTCORR_12V_C3 = +0.063;	//+0.047;
-float FACTCORR_12V_C4 = +0.077;	//+0.067;
-
-float ov_2v = 3.500;	// + FACTCORR_2V;//<= 5.73V
-float uv_2v = 1.800;	// + FACTCORR_2V;//>= 0.0016V
-
-//ov_12v_S3C / uv_12v_S3C Usados por software
-float ov_12v_S3C = 13.500;	//S3C Sum of 3 Cell
-float uv_12v_S3C = 10.0;	//1.950;
-
-float shuntVoltFullScale = 0.05;
-float shuntRatedCurrent = 1000;
-
-//ov_12v / uv_12v  usados SOLO de manera formal para CONFIG REGISTER
-//float FACTCORR_12V = (FACTCORR_12V_C1+FACTCORR_12V_C2+FACTCORR_12V_C3+FACTCORR_12V_C4)/4;
-float ov_12v = 5.5;	// + FACTCORR_12V;//<= 5.73V
-float uv_12v = 2.5;	// + FACTCORR_12V;//>= 0.0016V
 
 static uint16_t stack_voltage(char *buff)
 {
@@ -510,9 +465,7 @@ void enableFlagS(void)
 	ethSend.allstacks_ovFlag = 1;
 }
 #define NUMMAX 5
-
-PTRFX_retUINT16_T_arg1_PCHAR ethSend_pfx[NUMMAX] =
-{ stack_voltage, stack_current, stack_temperature, allstacks_uvFlag, allstacks_ovFlag, };
+PTRFX_retUINT16_T_arg1_PCHAR ethSend_pfx[NUMMAX] = { stack_voltage, stack_current, stack_temperature, allstacks_uvFlag, allstacks_ovFlag, };
 
 //
 static struct _ethTrsxTx
@@ -539,12 +492,11 @@ struct ETHTRSX_JOB_CODRET
 struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 {
 	struct ETHTRSX_JOB_CODRET cod_ret = {0,0};
-
+	//
 	char buff[20];
 	int8_t i, n;
 	static uint8_t *pf = (uint8_t*) &ethSend;
-
-	//Tx
+	//
 	#define JSONCSTR_MAXSIZE (400)
 	char jsonCstr[JSONCSTR_MAXSIZE];
 	char *pjsonCstr;
@@ -562,12 +514,11 @@ struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 		else
 			n = 2;
 
-		//build the json
+		//build the message: json format
 		pjsonCstr = &jsonCstr[0];
 		nbytes = 0;
 		found0 = 1;
 		doTx = 0;
-
 		//
 		strcpy(pjsonCstr, "{");
 		pjsonCstr++;
@@ -575,20 +526,19 @@ struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 		{
 			if (*pf & (1 << ethTrsxTx.bit))
 			{
-				//1) clear flag
 				BitTo0(*pf, ethTrsxTx.bit);
 				ethTrsxTx.bit++;
-
-				//2) for the next if found at begin, then stay found = 1
-				if (doTx == 1)
+				//
+				if (doTx == 1)//there was at least 1 message founded
 				{
 					strcat(pjsonCstr, ",");
 					pjsonCstr++;
 				}
+				//
 				nbytes = ethSend_pfx[ethTrsxTx.idx](pjsonCstr);
 				pjsonCstr += nbytes;
 				//
-				doTx = 1;
+				doTx = 1;//there is at least 1 message. Stay signed
 			}
 			if (++ethTrsxTx.idx >= NUMMAX)//all flags?
 			{
@@ -616,23 +566,19 @@ struct ETHTRSX_JOB_CODRET ethTrsxTx_job(void)	//especific User
 			ethTrsxTx.sm0++;
 		}
 	}
-
 	if (ethTrsxTx.sm0 == 1)
 	{
-		//despues del primer envio, ya no interesa la direccion del buffer
+		//after the frist outcoming json message, don't care address buffer
 		httpTrsx_rpta = httpTrsx_job(&trsx[0], 0, jsonCstr, strlen(jsonCstr), (char*)NULL, 0);
 		if ((httpTrsx_rpta == 1) || (httpTrsx_rpta == -1))
 		{
 			ethTrsxTx.sm0 = 0x00;
-
 			httpTrsx_setExecMode(&trsx[0], EM_RUN_ONCE);
-			//delay(500);
 			cod_ret.trsx = 1;
-
-			UART_printlnStrk(FS("FIN TX"));
+			UART_printlnStrk(FS("TX End"));
+			//delay(500);
 		}
 	}
-
 	return cod_ret;
 }
 ///////////////////////////////////////////////
@@ -652,9 +598,9 @@ static inline void ethTrsxRx_job_reset(void)
 struct ETHTRSX_JOB_CODRET ethTrsxRx_job(void)
 {
 	struct ETHTRSX_JOB_CODRET cod_ret = {0,0};
-	//++--
+
 	//Rx
-	char stream[40];
+	char stream[64];
 	JSON json;
 	int8_t httpTrsx_rpta;
 	int8_t jsonDecode_rpta;
@@ -673,45 +619,57 @@ struct ETHTRSX_JOB_CODRET ethTrsxRx_job(void)
 				if (json.name != NULL)
 				{
 					UART_printStrk(FS("\n"));
-					if (strcmp(json.name, "m1") == 0)
+					if (strcmp(json.name, "ch0") == 0)
 					{
+						/*TODO*/
+						 //double doub = strtod(json.strval, NULL);//etc etc
 					}
-					else if (strcmp(json.name, "ch2") == 0)
+					else if (strcmp(json.name, "rele") == 0)
 					{
+						double vrele[5];
+						int numEl = cCstrToDecimalArr((char *)json.strval,  vrele, sizeof(vrele)/sizeof(vrele[0]));
+						((int)vrele[0] == 1)? digitalWrite(RELE1,HIGH): digitalWrite(RELE1,LOW);
+						((int)vrele[1] == 1)? digitalWrite(RELE2,HIGH): digitalWrite(RELE2,LOW);
+						((int)vrele[2] == 1)? digitalWrite(RELE3,HIGH): digitalWrite(RELE3,LOW);
+						((int)vrele[3] == 1)? digitalWrite(RELE4,HIGH): digitalWrite(RELE4,LOW);
+						((int)vrele[4] == 1)? digitalWrite(RELE5,HIGH): digitalWrite(RELE5,LOW);
 					}
-					else if (strcmp(json.name, "num") == 0)
+					else if (strcmp(json.name, "led") == 0)
 					{
-						double doub = strtod(json.strval, NULL);
-						ledStatus = (int8_t) doub;
-						if (ledStatus_last!= ledStatus)
-						{
-							ledStatus_last = ledStatus;
-							if (ledStatus > 0)
-								digitalWrite(LED3, HIGH);
-							else
-								digitalWrite(LED3, LOW);
-						}
+						double vled[6];
+						int numEl = cCstrToDecimalArr((char *)json.strval,  vled, sizeof(vled)/sizeof(vled[0]));
+						((int)vled[0] == 1)? digitalWrite(LED1,HIGH): digitalWrite(LED1,LOW);
+						((int)vled[1] == 1)? digitalWrite(LED2,HIGH): digitalWrite(LED2,LOW);
+						((int)vled[2] == 1)? digitalWrite(LED3,HIGH): digitalWrite(LED3,LOW);
+						((int)vled[3] == 1)? digitalWrite(LED4,HIGH): digitalWrite(LED4,LOW);
+						((int)vled[4] == 1)? digitalWrite(LED5,HIGH): digitalWrite(LED5,LOW);
+						((int)vled[5] == 1)? digitalWrite(LED6,HIGH): digitalWrite(LED6,LOW);
 					}
 				}
 			} while (jsonDecode_rpta == 0);
-
 		}
 		if ((httpTrsx_rpta == 1) || (httpTrsx_rpta == -1))
 		{
 			//ethTrsxRx.sm0 = 0x00;
-
 			httpTrsx_setExecMode(&trsx[1], EM_RUN_ONCE);
 			cod_ret.trsx = 1;
 			cod_ret.job = 1;
-
+			//
 			UART_printlnStrk(FS("FIN RX"));
+			//delay(500);
 		}
 	//}
-
 	return cod_ret;
 }
 
-////////////////////////////////////////////////////////////
+//void eth_SPI_access(void)
+//{
+//    SPI.endTransaction();
+//    SPI_deselectAllperipherals();
+//    SPI.beginTransaction(SPI_ETHERNET_SETTINGS);
+//    //SPI.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE0));
+//    //SPI.begin();
+//}
 
 void eth_job(void)
 {
@@ -788,22 +746,12 @@ void eth_job(void)
 					}
 
 				}
-
-
 			}
 		}
 	}
 }
 
-uint8_t l;
 void loop(void)
 {
-	char buff[15];
-	strcpy(buff, "\n<<");
-	itoa(l, &buff[3], 10);
-	strcat(buff, ">>\n");
-	UART_printlnStr(buff);
-	l++;
-	//
 	eth_job();
 }
