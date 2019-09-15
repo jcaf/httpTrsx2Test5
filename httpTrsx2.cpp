@@ -1,7 +1,6 @@
 #if defined(__AVR__) && defined(__GNUC__)
     #include <Arduino.h>
     #include <Ethernet.h>
-
     #define __millis() millis()
 #else
 #endif

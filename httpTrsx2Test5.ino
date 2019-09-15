@@ -7,6 +7,7 @@
 #include <SPI.h>
 #include <Ethernet.h>
 #include <EthernetDHCP.h>
+#include <utility/w5100.h>
 #include "httpTrsx2.h"
 
 //Arduino MEGA pinout
@@ -81,7 +82,7 @@ void USART_Transmit(unsigned char data);
 unsigned char USART_Receive(void);
 void USART_Flush(void);
 
-#define FOSC F_CPU // Clock Speed
+#define FOSC F_CPU
 #define BAUD 38400//19200
 #define MYUBRR ((16e6/(16.0*BAUD))-1)
 
@@ -95,8 +96,6 @@ void USART_Init(unsigned int ubrr)
 	/*Set baud rate */
 	UBRR0H = (unsigned char) (ubrr >> 8);
 	UBRR0L = (unsigned char) ubrr;
-	//UBRR0H = 0;
-	//UBRR0L = 3;
 	/*Enable receiver and transmitter */
 	UCSR0B = (0 << RXEN0) | (1 << TXEN0);
 	/* Set frame format: 8data, 1stop bit */
@@ -376,6 +375,7 @@ void setup(void)
 	ConfigInputPin(DDRxLINKSTATUS, PINxLINKSTATUS);
 	PinTo1(PORTWxLINKSTATUS, PINxLINKSTATUS);
 
+	delay(1500);
 	spi_deselect_devices();	//only for QUANTICO BOARD
 	UART_setup();
 
@@ -384,13 +384,6 @@ void setup(void)
 	httpTrsx_UARTdebug_setPrintlnFx (UART_println);
 	httpTrsx_UARTdebug_setPrintCharFx(UART_printChar);
 	#endif
-
-	delay(2000);
-
-	//Extra
-	//client.setClientTimeout(500);	//200ms its OK to J.P server
-	//W5100.setRetransmissionTime(500);	//x 0.1ms = 50 ms
-	//W5100.setRetransmissionCount(2);
 
 	/* Set trsx[0] for Tx */
 	httpTrsx_setClient(&trsx[0], (Client*) &client);
@@ -674,15 +667,17 @@ struct ETHTRSX_JOB_CODRET ethTrsxRx_job(void)
 void eth_job(void)
 {
 	//eth_SPI_access();
+	static unsigned long millis_last;
 	static int8_t sm0, sm1;
 	struct ETHTRSX_JOB_CODRET cod_ret={0,0};
+
 
 	if (sm0 == 0)
 	{
 		if (NIC_getLinkStatus() == 1)
 		{
 			UART_printlnStr("EthernetDHCP.begin(MAC, 1)");
-
+			//
 			EthernetDHCP.begin(MAC, 1);
 			ethTrsxTx_job_reset();
 			ethTrsxRx_job_reset();
@@ -690,6 +685,15 @@ void eth_job(void)
 			{
 				httpTrsx_job_reset(&trsx[i]);
 			}
+			//
+			millis_last = millis();
+			sm0++;
+		}
+	}
+	else if (sm0 == 1)
+	{
+		if ((millis() - millis_last) > 2500)
+		{
 			sm0++;
 		}
 	}
@@ -702,7 +706,7 @@ void eth_job(void)
 			sm0 = 0x00;
 		}
 
-		if (sm0 == 1)
+		if (sm0 == 2)
 		{
 			if (eth_DHCP_leased() == 1)
 			{
@@ -716,37 +720,48 @@ void eth_job(void)
 				sm0++;
 			}
 		}
-		else if (sm0 == 2)
+		else if (sm0 == 3)
 		{
-			if (eth_DHCP_leased() == 1)
-			{
-				if (sm1 == 0)
+//			if (NIC_getLinkStatus() == 0)
+//			{
+//				client.flush();
+//				client.stop();
+//				sm0 = 0x00;
+//			}
+//			else
+//			{
+				//
+				if (eth_DHCP_leased() == 1)
 				{
-					cod_ret = ethTrsxTx_job();//tx
-					if (cod_ret.job == 1)//Write job finished?
+					if (sm1 == 0)
 					{
-						//reload flags
-						enableFlagS();
+						cod_ret = ethTrsxTx_job();//tx
+						if (cod_ret.job == 1)//Write job finished?
+						{
+							//reload flags
+							enableFlagS();
+						}
+						if (cod_ret.trsx == 1)//1 trsx finished?
+						{
+							sm1++;//conmutar a Rx
+						}
 					}
-					if (cod_ret.trsx == 1)//1 trsx finished?
+					else if (sm1 == 1)
 					{
-						sm1++;//conmutar a Rx
-					}
-				}
-				else if (sm1 == 1)
-				{
-					cod_ret = ethTrsxRx_job();//tx
-					if (cod_ret.job == 1)//Read job finished?
-					{
-						sm1 = 0x00;
-					}
-					if (cod_ret.trsx == 1)//1 trsx finished?
-					{
-						//sm1 = 0x00;//conmutar a Tx
-					}
+						cod_ret = ethTrsxRx_job();//tx
+						if (cod_ret.job == 1)//Read job finished?
+						{
+							sm1 = 0x00;
+						}
+						if (cod_ret.trsx == 1)//1 trsx finished?
+						{
+							//sm1 = 0x00;//conmutar a Tx
+						}
 
+					}
 				}
-			}
+				//
+//			}
 		}
 	}
 }
