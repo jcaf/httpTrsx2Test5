@@ -1,4 +1,5 @@
 /*
+ * Simulation Quantico Board
  * Arduino 1.6.1
  * EthernetDHCP
  * ]<äf.
@@ -7,7 +8,7 @@
 #include <SPI.h>
 #include <Ethernet.h>
 #include <EthernetDHCP.h>
-#include <utility/w5100.h>
+
 #include "httpTrsx2.h"
 
 //Arduino MEGA pinout
@@ -692,7 +693,7 @@ void eth_job(void)
 	}
 	else if (sm0 == 1)
 	{
-		if ((millis() - millis_last) > 2500)
+		if ((millis() - millis_last) > 2000)
 		{
 			sm0++;
 		}

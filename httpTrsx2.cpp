@@ -432,7 +432,7 @@ int8_t httpTrsx_responseMsg(TRSX *trsx, char *rxmsg, size_t rxmsgSize)
 	static int n;
 	n++;
 	strcpy(buff, "\nbuff: ");
-	json_cInteger(n, &buff[strlen(buff)]);
+	cIntToStr(n, &buff[strlen(buff)]);
 	httpTrsx_UARTdebug_println(trsx, buff, 0);
 #endif
 	//------------------------
@@ -600,7 +600,7 @@ int8_t httpTrsx_do1trsx(TRSX *trsx, int8_t typeData, void *txmsg, uint16_t txmsg
 		#ifdef HTTPTRSX_DEBUG
 			char buff[20];
 			strcpy(buff, "\nConnectRpta: ");
-			json_cInteger(connectRpta, &buff[strlen(buff)]);
+			cIntToStr(connectRpta, &buff[strlen(buff)]);
 			httpTrsx_UARTdebug_println(trsx, buff, 0);
 		#endif
 

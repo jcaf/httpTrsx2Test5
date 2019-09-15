@@ -27,7 +27,7 @@ enum
 	CNUM_FLOAT, CNUM_INT, CNUM_UINT8,
 };
 void json_cNumericArr(void *v, int8_t typeData, int size, char *outbuff);
-void json_cInteger(int i, char *outbuff);
-void json_cFloat(float f, char *outbuff);
+void cIntToStr(int i, char *outbuff);
+void cDecToStr(float f, char *outbuff);
 
 #endif /* JSON_H_ */
